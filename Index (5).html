@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Noto Sans Bengali', 'Segoe UI', sans-serif;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 12px;
+    color: #1a1a1a;
+  }
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    margin: 4px 0;
+    color: #1b5e20;
+  }
+  .date-label {
+    text-align: center;
+    color: #555;
+    margin-bottom: 12px;
+    font-size: 15px;
+  }
+  .summary {
+    display: flex;
+    justify-content: space-around;
+    background: #1b5e20;
+    color: white;
+    border-radius: 10px;
+    padding: 10px 4px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+  .summary div { text-align: center; padding: 4px 6px; }
+  .summary b { font-size: 20px; display: block; }
+  section {
+    background: white;
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  section h2 {
+    font-size: 17px;
+    margin: 0 0 10px 0;
+    color: #0d47a1;
+  }
+  .member-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 4px;
+    border-bottom: 1px solid #eee;
+    gap: 8px;
+  }
+  .member-row:last-child { border-bottom: none; }
+  .member-name {
+    font-size: 16px;
+    font-weight: 600;
+    flex: 1;
+    overflow-wrap: anywhere;
+  }
+  .btn-group { display: flex; gap: 6px; flex-shrink: 0; }
+  button.meal-btn {
+    border: none;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    min-width: 70px;
+    cursor: pointer;
+  }
+  .btn-yes { background: #e0e0e0; color: #333; }
+  .btn-yes.active { background: #2e7d32; color: white; }
+  .btn-no { background: #e0e0e0; color: #333; }
+  .btn-no.active { background: #c62828; color: white; }
+  .toast {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1a1a;
+    color: white;
+    padding: 10px 18px;
+    border-radius: 20px;
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 100;
+    max-width: 90%;
+    text-align: center;
+  }
+  .toast.show { opacity: 1; }
+  .empty {
+    text-align: center;
+    color: #888;
+    padding: 20px;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<h1>🍽️ মেস মিল বোর্ড</h1>
+<div class="date-label" id="dateLabel">তারিখ: লোড হচ্ছে...</div>
+
+<div class="summary">
+  <div><b id="lunchCount">-</b>দুপুরে মিল</div>
+  <div><b id="dinnerCount">-</b>রাতে মিল</div>
+  <div><b id="totalMeals">-</b>আজ মোট মিল</div>
+</div>
+
+<section>
+  <h2>☀️ দুপুরের মিল</h2>
+  <div id="lunchList"><div class="empty">লোড হচ্ছে...</div></div>
+</section>
+
+<section>
+  <h2>🌙 রাতের মিল</h2>
+  <div id="dinnerList"><div class="empty">লোড হচ্ছে...</div></div>
+</section>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let boardData = null;
+let busy = false;
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function rowHtml(m, mealType, value) {
+  const yesActive = value === 1 ? 'active' : '';
+  const noActive = value === 0 ? 'active' : '';
+  return '<div class="member-row">' +
+    '<div class="member-name">' + escapeHtml(m.name) + '</div>' +
+    '<div class="btn-group">' +
+      '<button class="meal-btn btn-yes ' + yesActive + '" onclick="setMeal(\'' + m.id + '\',\'' + mealType + '\',1,' + m.hasPin + ')">🍚 খাব</button>' +
+      '<button class="meal-btn btn-no ' + noActive + '" onclick="setMeal(\'' + m.id + '\',\'' + mealType + '\',0,' + m.hasPin + ')">❌ খাব না</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function render() {
+  if (!boardData) return;
+  document.getElementById('dateLabel').textContent = 'তারিখ: ' + boardData.date;
+  document.getElementById('lunchCount').textContent = boardData.lunchCount;
+  document.getElementById('dinnerCount').textContent = boardData.dinnerCount;
+  document.getElementById('totalMeals').textContent = boardData.totalMeals;
+
+  const lunchList = document.getElementById('lunchList');
+  const dinnerList = document.getElementById('dinnerList');
+
+  if (boardData.members.length === 0) {
+    const msg = '<div class="empty">কোনো সদস্য পাওয়া যায়নি।<br>Members শীটে সদস্য যোগ করুন (ID, Name, Active=Y)।</div>';
+    lunchList.innerHTML = msg;
+    dinnerList.innerHTML = '';
+    return;
+  }
+
+  lunchList.innerHTML = boardData.members.map(m => rowHtml(m, 'Lunch', m.lunch)).join('');
+  dinnerList.innerHTML = boardData.members.map(m => rowHtml(m, 'Dinner', m.dinner)).join('');
+}
+
+function setMeal(memberId, mealType, value, hasPin) {
+  if (busy) return;
+  let pin = '';
+  if (hasPin) {
+    pin = prompt('আপনার পিন দিন:');
+    if (pin === null) return;
+  }
+  busy = true;
+  google.script.run
+    .withSuccessHandler(function (data) {
+      boardData = data;
+      render();
+      showToast('আপনার আজকের মিল সংরক্ষণ হয়েছে।');
+      busy = false;
+    })
+    .withFailureHandler(function (err) {
+      showToast((err && err.message) || 'মিলের তথ্য সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।');
+      busy = false;
+    })
+    .updateMeal(memberId, boardData.date, mealType, value, pin);
+}
+
+function loadBoard() {
+  google.script.run
+    .withSuccessHandler(function (data) {
+      boardData = data;
+      render();
+    })
+    .withFailureHandler(function () {
+      showToast('বোর্ড লোড করা যায়নি। আবার চেষ্টা করুন।');
+    })
+    .getBoardData(null);
+}
+
+loadBoard();
+setInterval(function () {
+  if (!busy) loadBoard();
+}, 8000); // প্রতি ৮ সেকেন্ডে বোর্ড রিফ্রেশ (রিয়েল-টাইম মত)
+</script>
+
+</body>
+</html>
